@@ -26,26 +26,54 @@ async function startServer() {
   try {
     log("🌐 Launching headless browser...");
     browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-
-    await page.setExtraHTTPHeaders({
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+    const context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
     });
+    const page = await context.newPage();
 
     log(`📄 Opening ${START_URL}`);
     await page.goto(START_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+    await page.waitForTimeout(3000);
 
-    await page.waitForTimeout(5000);
+    // Dismiss cookie consent popup if present
+    try {
+      const acceptBtn = page.locator('button:has-text("Accept"), button:has-text("agree"), button:has-text("OK"), button:has-text("Consent"), [id*="accept"], [class*="accept"]').first();
+      if (await acceptBtn.isVisible({ timeout: 3000 })) {
+        await acceptBtn.click({ force: true });
+        log("🍪 Dismissed cookie popup");
+        await page.waitForTimeout(2000);
+      }
+    } catch (e) {
+      log("No cookie popup found, continuing...");
+    }
 
-    const btn = await page.$("button[type='submit'], input[type='submit'], .start-btn, #start-btn");
-    if (btn) {
-      await btn.click();
-      log("✅ Clicked start button!");
-      await page.waitForTimeout(5000);
-    } else {
-      log("⚠️ Could not find start button — dumping page text...");
-      const text = await page.innerText("body");
-      log(text.substring(0, 500));
+    // Also try clicking away the cookie framework by force
+    try {
+      await page.evaluate(() => {
+        const cmp = document.getElementById('snigel-cmp-framework');
+        if (cmp) cmp.remove();
+      });
+      log("🗑️ Removed cookie framework from DOM");
+    } catch (e) {}
+
+    await page.waitForTimeout(1000);
+
+    // Now click the start button
+    try {
+      const startBtn = page.locator('button:has-text("Start"), button:has-text("start"), input[type="submit"], button[type="submit"]').first();
+      if (await startBtn.isVisible({ timeout: 5000 })) {
+        await startBtn.click({ force: true });
+        log("✅ Clicked start button!");
+        await page.waitForTimeout(5000);
+        const bodyText = await page.innerText("body");
+        log("Page says: " + bodyText.substring(0, 300));
+      } else {
+        log("⚠️ Start button not found");
+        const bodyText = await page.innerText("body");
+        log("Page content: " + bodyText.substring(0, 500));
+      }
+    } catch (e) {
+      log(`❌ Could not click start button: ${e.message}`);
     }
 
   } catch (err) {
