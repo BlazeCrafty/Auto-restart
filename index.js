@@ -4,7 +4,7 @@ const net = require("net");
 const SERVER = "blazecraftsmpgg.falixsrv.me";
 const PORT = 25565;
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
-const START_URL = `https://falixnodes.net/startserver?ip=${SERVER}`;
+const START_URL = "https://falixnodes.net/startserver";
 
 function log(msg) {
   console.log(`[${new Date().toISOString()}] ${msg}`);
@@ -35,43 +35,39 @@ async function startServer() {
     await page.goto(START_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(3000);
 
-    // Dismiss cookie consent popup if present
-    try {
-      const acceptBtn = page.locator('button:has-text("Accept"), button:has-text("agree"), button:has-text("OK"), button:has-text("Consent"), [id*="accept"], [class*="accept"]').first();
-      if (await acceptBtn.isVisible({ timeout: 3000 })) {
-        await acceptBtn.click({ force: true });
-        log("🍪 Dismissed cookie popup");
-        await page.waitForTimeout(2000);
-      }
-    } catch (e) {
-      log("No cookie popup found, continuing...");
-    }
-
-    // Also try clicking away the cookie framework by force
+    // Dismiss cookie consent popup
     try {
       await page.evaluate(() => {
         const cmp = document.getElementById('snigel-cmp-framework');
         if (cmp) cmp.remove();
       });
-      log("🗑️ Removed cookie framework from DOM");
+      log("🗑️ Removed cookie framework");
     } catch (e) {}
 
     await page.waitForTimeout(1000);
 
-    // Now click the start button
+    // Type the server subdomain into the input field
     try {
-      const startBtn = page.locator('button:has-text("Start"), button:has-text("start"), input[type="submit"], button[type="submit"]').first();
-      if (await startBtn.isVisible({ timeout: 5000 })) {
-        await startBtn.click({ force: true });
-        log("✅ Clicked start button!");
-        await page.waitForTimeout(5000);
-        const bodyText = await page.innerText("body");
-        log("Page says: " + bodyText.substring(0, 300));
-      } else {
-        log("⚠️ Start button not found");
-        const bodyText = await page.innerText("body");
-        log("Page content: " + bodyText.substring(0, 500));
-      }
+      const input = page.locator('input[type="text"], input[placeholder*="server"], input[placeholder*="falix"], input[name*="ip"], input[name*="server"]').first();
+      await input.waitFor({ timeout: 5000 });
+      await input.clear();
+      await input.fill(SERVER);
+      log(`⌨️ Typed server address: ${SERVER}`);
+    } catch (e) {
+      log(`❌ Could not find input field: ${e.message}`);
+    }
+
+    await page.waitForTimeout(1000);
+
+    // Click the Start Server button
+    try {
+      const startBtn = page.locator('button:has-text("Start"), button:has-text("Démarrer")').first();
+      await startBtn.waitFor({ timeout: 5000 });
+      await startBtn.click({ force: true });
+      log("✅ Clicked start button!");
+      await page.waitForTimeout(8000);
+      const bodyText = await page.innerText("body");
+      log("Page says: " + bodyText.substring(0, 400));
     } catch (e) {
       log(`❌ Could not click start button: ${e.message}`);
     }
