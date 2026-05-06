@@ -1,4 +1,4 @@
-const { chromium } = require("playwright");
+const { firefox } = require("playwright");
 const net = require("net");
 
 const SERVER = "blazecraftsmpgg.falixsrv.me";
@@ -24,18 +24,46 @@ function isServerOnline() {
 async function startServer() {
   let browser;
   try {
-    log("🌐 Launching headless browser...");
-    browser = await chromium.launch({ headless: true });
-    const context = await browser.newContext({
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
+    log("🌐 Launching stealth browser...");
+    browser = await firefox.launch({
+      headless: true,
+      firefoxUserPrefs: {
+        "general.useragent.override": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+        "media.peerconnection.enabled": false,
+        "privacy.resistFingerprinting": false,
+        "dom.webdriver.enabled": false,
+        "useAutomationExtension": false,
+      }
     });
+
+    const context = await browser.newContext({
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
+      locale: "en-US",
+      timezoneId: "Europe/Paris",
+      viewport: { width: 1280, height: 720 },
+      deviceScaleFactor: 1,
+      hasTouch: false,
+      javaScriptEnabled: true,
+    });
+
+    // Hide webdriver flag
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+      Object.defineProperty(navigator, "plugins", { get: () => [1, 2, 3, 4, 5] });
+      Object.defineProperty(navigator, "languages", { get: () => ["en-US", "en"] });
+      window.chrome = { runtime: {} };
+    });
+
     const page = await context.newPage();
 
     log(`📄 Opening ${START_URL}`);
-    await page.goto(START_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
-    await page.waitForTimeout(3000);
+    await page.goto(START_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
 
-    // Dismiss cookie consent popup
+    // Wait for Cloudflare to pass
+    log("⏳ Waiting for Cloudflare verification...");
+    await page.waitForTimeout(10000);
+
+    // Remove cookie popup
     try {
       await page.evaluate(() => {
         const cmp = document.getElementById('snigel-cmp-framework');
@@ -46,34 +74,34 @@ async function startServer() {
 
     await page.waitForTimeout(1000);
 
-    // Type the server subdomain into the input field
+    // Type server address
     try {
-      const input = page.locator('input[type="text"], input[placeholder*="server"], input[placeholder*="falix"], input[name*="ip"], input[name*="server"]').first();
+      const input = page.locator('input').first();
       await input.waitFor({ timeout: 5000 });
-      await input.clear();
       await input.fill(SERVER);
-      log(`⌨️ Typed server address: ${SERVER}`);
+      log(`⌨️ Typed: ${SERVER}`);
     } catch (e) {
-      log(`❌ Could not find input field: ${e.message}`);
+      log(`⚠️ Input field issue: ${e.message}`);
     }
 
     await page.waitForTimeout(1000);
 
-    // Click the Start Server button
+    // Click start button
     try {
-      const startBtn = page.locator('button:has-text("Start"), button:has-text("Démarrer")').first();
-      await startBtn.waitFor({ timeout: 5000 });
-      await startBtn.click({ force: true });
+      const btn = page.locator('button:has-text("Start"), button:has-text("Démarrer")').first();
+      await btn.click({ force: true });
       log("✅ Clicked start button!");
       await page.waitForTimeout(8000);
-      const bodyText = await page.innerText("body");
-      log("Page says: " + bodyText.substring(0, 400));
+      const text = await page.innerText("body");
+      log("Result: " + text.substring(0, 300));
     } catch (e) {
-      log(`❌ Could not click start button: ${e.message}`);
+      log(`❌ Button error: ${e.message}`);
+      const text = await page.innerText("body");
+      log("Page: " + text.substring(0, 300));
     }
 
   } catch (err) {
-    log(`❌ Browser error: ${err.message}`);
+    log(`❌ Error: ${err.message}`);
   } finally {
     if (browser) await browser.close();
   }
@@ -85,12 +113,12 @@ async function checkAndRestart() {
   if (online) {
     log("✅ Server is ONLINE — no action needed.");
   } else {
-    log("❌ Server is OFFLINE — launching browser to start it...");
+    log("❌ Server is OFFLINE — attempting stealth start...");
     await startServer();
   }
 }
 
 checkAndRestart();
 setInterval(checkAndRestart, CHECK_INTERVAL_MS);
-log(`🔄 Auto-restart watcher started for ${SERVER}`);
+log(`🔄 Stealth auto-restart started for ${SERVER}`);
 log(`⏱️  Checking every 5 minutes...`);
