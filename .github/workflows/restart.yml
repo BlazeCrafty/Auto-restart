@@ -11,11 +11,15 @@ jobs:
         run: |
           SERVER="blazecraftsmpgg.falixsrv.me"
           PORT=25565
+          WEBHOOK="https://discord.com/api/webhooks/1501536510061707387/Ui-zKaDTFujiE-73tZ6dz_owhKcfTSdyg_lbqRXGk5DYnXIk6d-lTwMbVBtZ5Rz2JrnU"
+
           echo "Checking if $SERVER is online..."
+
           if nc -z -w 10 "$SERVER" "$PORT" 2>/dev/null; then
             echo "Server is ONLINE - no action needed"
           else
             echo "Server is OFFLINE - sending start request..."
+
             curl -s -X POST "https://falixnodes.net/server/start" \
               -H "Content-Type: application/x-www-form-urlencoded" \
               -H "User-Agent: Mozilla/5.0" \
@@ -23,5 +27,10 @@ jobs:
               -H "Origin: https://falixnodes.net" \
               --data "ip=blazecraftsmpgg.falixsrv.me" \
               --max-time 30
-            echo "Start request sent!"
+
+            curl -s -X POST "$WEBHOOK" \
+              -H "Content-Type: application/json" \
+              -d '{"content":"🔄 Server was offline - restart request sent!"}'
+
+            echo "Done!"
           fi
