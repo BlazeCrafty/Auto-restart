@@ -1,103 +1,72 @@
-const https = require("https");
-const dns = require("dns");
+const { chromium } = require("playwright");
+const net = require("net");
 
-const SERVER_SUBDOMAIN = "blazecraftsmpgg.falixsrv.me";
-const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const SERVER = "blazecraftsmpgg.falixsrv.me";
+const PORT = 25565;
+const CHECK_INTERVAL_MS = 5 * 60 * 1000;
+const START_URL = `https://falixnodes.net/startserver?ip=${SERVER}`;
 
 function log(msg) {
-  const now = new Date().toISOString();
-  console.log(`[${now}] ${msg}`);
+  console.log(`[${new Date().toISOString()}] ${msg}`);
 }
 
 function isServerOnline() {
   return new Promise((resolve) => {
-    dns.lookup(SERVER_SUBDOMAIN, (err) => {
-      if (err) {
-        resolve(false);
-        return;
-      }
-      // Try a TCP connection on port 25565
-      const net = require("net");
-      const socket = new net.Socket();
-      socket.setTimeout(5000);
-      socket.on("connect", () => {
-        socket.destroy();
-        resolve(true);
-      });
-      socket.on("error", () => {
-        socket.destroy();
-        resolve(false);
-      });
-      socket.on("timeout", () => {
-        socket.destroy();
-        resolve(false);
-      });
-      socket.connect(25565, SERVER_SUBDOMAIN);
-    });
+    const socket = new net.Socket();
+    socket.setTimeout(8000);
+    socket.on("connect", () => { socket.destroy(); resolve(true); });
+    socket.on("error", () => { socket.destroy(); resolve(false); });
+    socket.on("timeout", () => { socket.destroy(); resolve(false); });
+    socket.connect(PORT, SERVER);
   });
 }
 
-function startServer() {
-  return new Promise((resolve) => {
-    const url = `https://falixnodes.net/api/server/start?ip=${SERVER_SUBDOMAIN}`;
-    const options = {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0",
-      },
-    };
+async function startServer() {
+  let browser;
+  try {
+    log("🌐 Launching headless browser...");
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
 
-    // Try the external start API endpoint
-    const req = https.request(
-      `https://falixnodes.net/server/start`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "Mozilla/5.0",
-          Referer: "https://falixnodes.net/startserver",
-          Origin: "https://falixnodes.net",
-        },
-      },
-      (res) => {
-        let data = "";
-        res.on("data", (chunk) => (data += chunk));
-        res.on("end", () => {
-          log(`Start response [${res.statusCode}]: ${data.substring(0, 200)}`);
-          resolve(res.statusCode);
-        });
-      }
-    );
-
-    req.on("error", (e) => {
-      log(`Start request error: ${e.message}`);
-      resolve(null);
+    await page.setExtraHTTPHeaders({
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
     });
 
-    req.write(`ip=${SERVER_SUBDOMAIN}`);
-    req.end();
-  });
+    log(`📄 Opening ${START_URL}`);
+    await page.goto(START_URL, { waitUntil: "domcontentloaded", timeout: 30000 });
+
+    await page.waitForTimeout(5000);
+
+    const btn = await page.$("button[type='submit'], input[type='submit'], .start-btn, #start-btn");
+    if (btn) {
+      await btn.click();
+      log("✅ Clicked start button!");
+      await page.waitForTimeout(5000);
+    } else {
+      log("⚠️ Could not find start button — dumping page text...");
+      const text = await page.innerText("body");
+      log(text.substring(0, 500));
+    }
+
+  } catch (err) {
+    log(`❌ Browser error: ${err.message}`);
+  } finally {
+    if (browser) await browser.close();
+  }
 }
 
 async function checkAndRestart() {
   log("Checking if server is online...");
   const online = await isServerOnline();
-
   if (online) {
-    log(`✅ Server is ONLINE — no action needed.`);
+    log("✅ Server is ONLINE — no action needed.");
   } else {
-    log(`❌ Server is OFFLINE — attempting to start...`);
+    log("❌ Server is OFFLINE — launching browser to start it...");
     await startServer();
-    log(`🚀 Start request sent to FalixNodes!`);
   }
 }
 
-// Run immediately on start
 checkAndRestart();
-
-// Then run every 5 minutes
 setInterval(checkAndRestart, CHECK_INTERVAL_MS);
-
-log(`🔄 Auto-restart watcher started for ${SERVER_SUBDOMAIN}`);
+log(`🔄 Auto-restart watcher started for ${SERVER}`);
 log(`⏱️  Checking every 5 minutes...`);
